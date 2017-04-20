@@ -11,12 +11,16 @@ import (
 // TokenWebhook responds to requests from the K8s authentication webhook
 type TokenWebhook struct {
 	tokenVerifier token.Verifier
+	UserAttribute string
+	GroupsAttribute string
 }
 
 // NewTokenWebhook returns a TokenWebhook with the given verifier
-func NewTokenWebhook(verifier token.Verifier) *TokenWebhook {
+func NewTokenWebhook(verifier token.Verifier, userAttr string, groupAttr string) *TokenWebhook {
 	return &TokenWebhook{
 		tokenVerifier: verifier,
+		UserAttribute: userAttr,
+		GroupsAttribute: groupAttr,
 	}
 }
 
@@ -45,11 +49,15 @@ func (tw *TokenWebhook) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	glog.Infof("Token: %s\n", token)
+
 	// Token is valid.
 	trr.Status = TokenReviewStatus{
 		Authenticated: true,
 		User: UserInfo{
 			Username: token.Username,
+			Groups: token.Groups,
+			Extra: token.Assertions,
 		},
 	}
 

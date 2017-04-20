@@ -35,4 +35,5 @@ Godeps/_workspace
 Session.vim
 .netrwhist
 *~
-
+*.crt
+*.key

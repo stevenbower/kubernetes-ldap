@@ -1,0 +1,97 @@
+# people OU
+dn: ou=people,dc=example,dc=org
+changetype: add
+objectclass: organizationalunit
+ou: people
+description: generic people branch
+
+# groups OU
+dn: ou=groups,dc=example,dc=org
+changetype: add
+objectclass: organizationalunit
+ou: groups
+description: generic groups branch
+
+# user1 user
+dn: uid=user1,ou=people,dc=example,dc=org
+changetype: add
+objectClass: top
+objectClass: posixAccount
+objectClass: shadowAccount
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+cn: User One
+givenName: User
+sn: One
+uid: user1
+uidNumber: 1234567890
+gidNumber: 100
+homeDirectory: /home/user1
+loginShell: /bin/bash
+gecos: user1
+# I've used http://projects.marsching.org/weave4j/util/genpassword.php to gen the passwd
+# userPassword = pass1
+userPassword: {SSHA}CtTgunsM8pteR0TJ1B22yLDOOUlAQnl9
+shadowLastChange: 0
+shadowMax: 0
+shadowWarning: 0
+
+# user2 user
+dn: uid=user2,ou=people,dc=example,dc=org
+changetype: add
+objectClass: top
+objectClass: posixAccount
+objectClass: shadowAccount
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+cn: User Two
+givenName: User
+sn: Two
+uid: user2
+uidNumber: 1234567891
+gidNumber: 100
+homeDirectory: /home/user2
+loginShell: /bin/bash
+gecos: user2
+# userPassword = pass2
+userPassword: {SSHA}UjvcLHls/wstmW+Ndxn0v/Rnbglt3OHQ
+shadowLastChange: 0
+shadowMax: 0
+shadowWarning: 0
+
+# users group
+dn: cn=users,ou=groups,dc=example,dc=org
+changetype: add
+objectclass: groupOfUniqueNames
+cn: users
+description: group/users
+uniqueMember: uid=user1,ou=people,dc=example,dc=org
+uniqueMember: uid=user2,ou=people,dc=example,dc=org
+
+# group1 group
+dn: cn=group1,ou=groups,dc=example,dc=org
+changetype: add
+objectclass: groupOfUniqueNames
+cn: group1
+description: group/group2
+uniqueMember: uid=user1,ou=people,dc=example,dc=org
+
+# group2 group
+dn: cn=group2,ou=groups,dc=example,dc=org
+changetype: add
+objectclass: groupOfUniqueNames
+cn: group2
+description: group/group2
+uniqueMember: uid=user2,ou=people,dc=example,dc=org
+
+# group3 group
+dn: cn=group3,ou=groups,dc=example,dc=org
+changetype: add
+objectclass: groupOfUniqueNames
+cn: group3
+description: group/group3
+uniqueMember: uid=user1,ou=people,dc=example,dc=org
+uniqueMember: uid=user2,ou=people,dc=example,dc=org
+

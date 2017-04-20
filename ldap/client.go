@@ -10,7 +10,7 @@ import (
 
 // Authenticator authenticates a user against an LDAP directory
 type Authenticator interface {
-	Authenticate(username, password string) (*ldap.Entry, error)
+	Authenticate(username, password string) (*AuthenticationResult, error)
 }
 
 // Client represents a connection, and associated lookup strategy,
@@ -21,14 +21,22 @@ type Client struct {
 	LdapPort           uint
 	AllowInsecure      bool
 	UserLoginAttribute string
+	GroupsAttribute 	 string
+	Attributes 				 []string
 	SearchUserDN       string
 	SearchUserPassword string
 	TLSConfig          *tls.Config
 }
 
+type AuthenticationResult struct {
+	LdapEntry *ldap.Entry
+	Username string
+	Groups []string
+}
+
 // Authenticate a user against the LDAP directory. Returns an LDAP entry if password
 // is valid, otherwise returns an error.
-func (c *Client) Authenticate(username, password string) (*ldap.Entry, error) {
+func (c *Client) Authenticate(username, password string) (*AuthenticationResult, error) {
 	conn, err := c.dial()
 	if err != nil {
 		return nil, fmt.Errorf("Error opening LDAP connection: %v", err)
@@ -60,18 +68,47 @@ func (c *Client) Authenticate(username, password string) (*ldap.Entry, error) {
 		return nil, fmt.Errorf("Multiple entries found for the search filter '%s': %+v", req.Filter, res.Entries)
 	}
 
+  // TODO(sbower): how I'd like to move this after the bind but this won't work if bound
+	//               as the user itself in most cases
+	groupCNs, err := c.lookupGroupCNs(conn, res.Entries[0])
+	if err != nil {
+		return nil, fmt.Errorf("Error retrieving group CNs: %v", err)
+	}
+
+	entry := res.Entries[0]
+
 	// Now that we know the user exists within the BaseDN scope
 	// let's do user bind to check credentials using the full DN instead of
 	// the attribute used for search
 	if c.SearchUserDN != "" && c.SearchUserPassword != "" {
-		err = conn.Bind(res.Entries[0].DN, password)
+		err = conn.Bind(entry.DN, password)
 		if err != nil {
 			return nil, fmt.Errorf("Error binding user %s, invalid credentials: %v", username, err)
 		}
 	}
 
+	ldapUsername := entry.GetAttributeValue(c.UserLoginAttribute)
+
+	filteredAttrs := []*ldap.EntryAttribute{}
+	if c.Attributes != nil && len(c.Attributes) > 0 {
+		for _, attrName := range c.Attributes {
+			for _, attr := range entry.Attributes {
+				if attr.Name == attrName {
+					filteredAttrs = append(filteredAttrs, attr)
+				}
+			}
+		}
+	}
+	entry.Attributes = filteredAttrs
+
+	authRes := &AuthenticationResult{
+		Username: ldapUsername,
+		Groups: groupCNs,
+		LdapEntry: res.Entries[0],
+	}
+
 	// Single user entry found
-	return res.Entries[0], nil
+	return authRes, nil
 }
 
 // Create a new TCP connection to the LDAP server
@@ -95,6 +132,9 @@ func (c *Client) dial() (*ldap.Conn, error) {
 func (c *Client) newUserSearchRequest(username string) *ldap.SearchRequest {
 	// TODO(abrand): sanitize
 	userFilter := fmt.Sprintf("(%s=%s)", c.UserLoginAttribute, username)
+
+  attr := mergeLists([]string{"dn", c.GroupsAttribute, c.UserLoginAttribute}, c.Attributes)
+
 	return &ldap.SearchRequest{
 		BaseDN:       c.BaseDN,
 		Scope:        ldap.ScopeWholeSubtree,
@@ -103,5 +143,62 @@ func (c *Client) newUserSearchRequest(username string) *ldap.SearchRequest {
 		TimeLimit:    10, // make configurable?
 		TypesOnly:    false,
 		Filter:       userFilter,
+		Attributes:   attr,
 	}
+}
+
+func (c *Client) lookupGroupCNs(conn *ldap.Conn, entry *ldap.Entry) ([]string, error) {
+	groupDNs := entry.GetAttributeValues(c.GroupsAttribute)
+
+	groups := []string{}
+
+	//groupFilter := "(|("+strings.Join(groupDNs, ")(")+"))"
+	for _, g := range groupDNs {
+		req := &ldap.SearchRequest{
+			BaseDN:       g,
+			Scope:        ldap.ScopeBaseObject,
+			DerefAliases: ldap.NeverDerefAliases, // ????
+			SizeLimit:    2,
+			TimeLimit:    10, // make configurable?
+			TypesOnly:    false,
+			Filter:				"(objectclass=*)",
+			Attributes:   []string{"dn","cn"},
+		}
+
+		res, err := conn.Search(req)
+		if err != nil {
+			return nil, fmt.Errorf("Error searching for groups %s: %v", g, err)
+		}
+
+		switch {
+		case len(res.Entries) == 0:
+			return nil, fmt.Errorf("No result for DN '%s'", g)
+		case len(res.Entries) > 1:
+			return nil, fmt.Errorf("Multiple entries found for the DN '%s': %+v", g, res.Entries)
+		}
+
+		cn := res.Entries[0].GetAttributeValue("cn")
+		groups = append(groups,cn)
+	}
+
+	return groups,nil
+}
+
+func mergeLists(lists ...[]string) ([]string) {
+	m := map[string]bool{}
+  for _, l := range lists {
+    if l != nil {
+      for _, v := range l {
+        m[v] = true
+      }
+    }
+  }
+
+	out := make([]string, len(m))
+	i := 0
+	for k := range m {
+	    out[i] = k
+			i++
+	}
+  return out
 }

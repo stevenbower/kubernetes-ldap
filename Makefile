@@ -1,6 +1,10 @@
 ifeq ($(origin VERSION), undefined)
   VERSION=$(git rev-parse --short HEAD)
 endif
+TAG=$(VERSION)
+ifeq ($(TAG), )
+	TAG=latest
+endif
 GOOS=$(shell go env GOOS)
 GOARCH=$(shell go env GOARCH)
 REPOPATH = kismatic/kubernetes-ldap
@@ -11,6 +15,9 @@ build: vendor
 test: bin/glide
 	go test $(shell ./bin/glide novendor)
 
+install: bin/glide
+	go install $(shell ./bin/glide novendor)
+
 vet: bin/glide
 	go vet $(shell ./bin/glide novendor)
 
@@ -19,6 +26,18 @@ fmt: bin/glide
 
 run:
 	./bin/kubernetes-ldap
+
+container: build
+	docker build -t $(REPOPATH):$(TAG) --rm .
+
+ldap:
+	$(MAKE) -c ldap_server
+
+ldap-run:
+	$(MAKE) -c ldap_server run
+
+ldap-stop:
+	$(MAKE) -c ldap_server run
 
 vendor: bin/glide
 	./bin/glide install

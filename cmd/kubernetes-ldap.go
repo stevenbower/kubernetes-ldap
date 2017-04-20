@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/golang/glog"
 	"github.com/kismatic/kubernetes-ldap/auth"
@@ -25,6 +26,8 @@ var flLdapHost = flag.String("ldap-host", "", "Host or IP of the LDAP server")
 var flLdapPort = flag.Uint("ldap-port", 389, "LDAP server port")
 var flBaseDN = flag.String("ldap-base-dn", "", "LDAP user base DN in the form 'dc=example,dc=com'")
 var flUserLoginAttribute = flag.String("ldap-user-attribute", "uid", "LDAP Username attribute for login")
+var flGroupsAttribute = flag.String("ldap-groups-attribute", "memberOf", "LDAP group dn attribute for login")
+var flAttributes = flag.String("ldap-attributes", "", "List of additional attributes (comma sep)")
 var flSearchUserDN = flag.String("ldap-search-user-dn", "", "Search user DN for this app to find users (e.g.: cn=admin,dc=example,dc=com).")
 var flSearchUserPassword = flag.String("ldap-search-user-password", "", "Search user password")
 var flSkipLdapTLSVerification = flag.Bool("ldap-skip-tls-verification", false, "Skip LDAP server TLS verification")
@@ -69,9 +72,17 @@ func main() {
 		glog.Errorf("Error creating token verifier: %v", err)
 	}
 
-	ldapTLSConfig := &tls.Config{
-		ServerName:         *flLdapHost,
-		InsecureSkipVerify: *flSkipLdapTLSVerification,
+	ldapTLSConfig := (*tls.Config)(nil)
+	if !*flLdapAllowInsecure {
+		ldapTLSConfig = &tls.Config{
+			ServerName:         *flLdapHost,
+			InsecureSkipVerify: *flSkipLdapTLSVerification,
+		}
+	}
+
+	attrs := strings.Split(*flAttributes,",")
+	for i, a := range attrs {
+		attrs[i] = strings.TrimSpace(a)
 	}
 
 	ldapClient := &ldap.Client{
@@ -80,14 +91,16 @@ func main() {
 		LdapPort:           *flLdapPort,
 		AllowInsecure:      *flLdapAllowInsecure,
 		UserLoginAttribute: *flUserLoginAttribute,
+		GroupsAttribute: 		*flGroupsAttribute,
 		SearchUserDN:       *flSearchUserDN,
 		SearchUserPassword: *flSearchUserPassword,
 		TLSConfig:          ldapTLSConfig,
+		Attributes: 				attrs,
 	}
 
 	server := &http.Server{Addr: fmt.Sprintf(":%d", *flServerPort)}
 
-	webhook := auth.NewTokenWebhook(tokenVerifier)
+	webhook := auth.NewTokenWebhook(tokenVerifier, *flUserLoginAttribute, *flGroupsAttribute)
 
 	ldapTokenIssuer := &auth.LDAPTokenIssuer{
 		LDAPAuthenticator: ldapClient,

@@ -6,18 +6,20 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"reflect"
 
-	"github.com/go-ldap/ldap"
+	goldap "github.com/go-ldap/ldap"
 	"github.com/kismatic/kubernetes-ldap/token"
+	"github.com/kismatic/kubernetes-ldap/ldap"
 )
 
 type dummyLDAP struct {
-	entry *ldap.Entry
+	authResult *ldap.AuthenticationResult
 	err   error
 }
 
-func (d dummyLDAP) Authenticate(username, password string) (*ldap.Entry, error) {
-	return d.entry, d.err
+func (d dummyLDAP) Authenticate(username, password string) (*ldap.AuthenticationResult, error) {
+	return d.authResult, d.err
 }
 
 type dummySigner struct {
@@ -32,7 +34,7 @@ func (d dummySigner) Sign(token *token.AuthToken) (string, error) {
 func TestTokenIssuer(t *testing.T) {
 	cases := []struct {
 		basicAuth    bool
-		ldapEntry    *ldap.Entry
+		authResult    *ldap.AuthenticationResult
 		expectedCode int
 		ldapErr      error
 		signerErr    error
@@ -40,7 +42,7 @@ func TestTokenIssuer(t *testing.T) {
 		{
 			// Happy path, user was authenticated against LDAP server
 			basicAuth:    true,
-			ldapEntry:    &ldap.Entry{},
+			authResult:    &ldap.AuthenticationResult{},
 			expectedCode: http.StatusOK,
 		},
 		{
@@ -58,14 +60,14 @@ func TestTokenIssuer(t *testing.T) {
 			// Signing token failed
 			basicAuth:    true,
 			expectedCode: http.StatusInternalServerError,
-			ldapEntry:    &ldap.Entry{},
+			authResult:    &ldap.AuthenticationResult{},
 			signerErr:    errors.New("Something failed while signing token"),
 		},
 	}
 
 	for i, c := range cases {
 		lti := LDAPTokenIssuer{
-			LDAPAuthenticator: dummyLDAP{c.ldapEntry, c.ldapErr},
+			LDAPAuthenticator: dummyLDAP{c.authResult, c.ldapErr},
 			TokenSigner:       dummySigner{"signedToken", c.signerErr},
 		}
 
@@ -90,24 +92,33 @@ func TestTokenIssuer(t *testing.T) {
 }
 
 func TestCreateToken(t *testing.T) {
-	e := &ldap.Entry{
-		DN: "some-dn",
+	authRes := &ldap.AuthenticationResult{
+		LdapEntry: &goldap.Entry{
+			DN: "some-dn",
+			Attributes: []*goldap.EntryAttribute{},
+		},
+		Username: "user1",
+		Groups: []string{"group1", "group3"},
 	}
 	lti := &LDAPTokenIssuer{
 		LDAPServer: "some-ldap-server",
 	}
-	expectedAssertions := map[string]string{
-		"ldapServer": lti.LDAPServer,
-		"userDN":     e.DN,
+	expectedAssertions := map[string][]string{
+		"ldapServer": []string{lti.LDAPServer},
+		"userDN":     []string{authRes.LdapEntry.DN},
 	}
 
-	tok := lti.createToken(e)
-	if tok.Username != e.DN {
-		t.Errorf("Unexpected username in token. Expected: '%s'. Got: '%s'.", e.DN, tok.Username)
+	tok := lti.createToken(authRes)
+	if tok.Username != authRes.Username {
+		t.Errorf("Unexpected username in token. Expected: '%s'. Got: '%s'.", authRes.Username, tok.Username)
+	}
+
+	if !reflect.DeepEqual(tok.Groups, authRes.Groups) {
+		t.Errorf("Unexpected groups in token. Expected: '%s'. Got: '%s'.", authRes.Groups, tok.Groups)
 	}
 
 	for k, v := range expectedAssertions {
-		if tok.Assertions[k] != v {
+		if !reflect.DeepEqual(tok.Assertions[k], v) {
 			t.Errorf("Expected assertion '%s' to be '%s'. Got '%s'", k, v, tok.Assertions[k])
 		}
 	}

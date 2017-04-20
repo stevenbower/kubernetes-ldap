@@ -20,3 +20,8 @@ import:
   - github.com\square\go-jose
 - package: gopkg.in/asn1-ber.v1
   version: 9eae18c3681ae3d3c677ac2b80a8fe57de45fc09
+- package: gopkg.in/ory-am/dockertest.v3
+  version: v3.0.6
+  subpackages:
+  - gopkg.in/ory-am/dockertest.v3
+

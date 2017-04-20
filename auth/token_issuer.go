@@ -3,7 +3,6 @@ package auth
 import (
 	"net/http"
 
-	goldap "github.com/go-ldap/ldap"
 	"github.com/golang/glog"
 	"github.com/kismatic/kubernetes-ldap/ldap"
 	"github.com/kismatic/kubernetes-ldap/token"
@@ -26,7 +25,7 @@ func (lti *LDAPTokenIssuer) ServeHTTP(resp http.ResponseWriter, req *http.Reques
 	}
 
 	// Authenticate the user via LDAP
-	ldapEntry, err := lti.LDAPAuthenticator.Authenticate(user, password)
+	authRes, err := lti.LDAPAuthenticator.Authenticate(user, password)
 	if err != nil {
 		glog.Errorf("Error authenticating user: %v", err)
 		resp.WriteHeader(http.StatusUnauthorized)
@@ -34,7 +33,7 @@ func (lti *LDAPTokenIssuer) ServeHTTP(resp http.ResponseWriter, req *http.Reques
 	}
 
 	// Auth was successful, create token
-	token := lti.createToken(ldapEntry)
+	token := lti.createToken(authRes)
 
 	// Sign token and return
 	signedToken, err := lti.TokenSigner.Sign(token)
@@ -48,12 +47,27 @@ func (lti *LDAPTokenIssuer) ServeHTTP(resp http.ResponseWriter, req *http.Reques
 	resp.Write([]byte(signedToken))
 }
 
-func (lti *LDAPTokenIssuer) createToken(ldapEntry *goldap.Entry) *token.AuthToken {
+func (lti *LDAPTokenIssuer) createToken(authResult *ldap.AuthenticationResult) *token.AuthToken {
+	ldapEntry := authResult.LdapEntry
+
+	attrMap := map[string][]string {
+		"ldapServer": []string{lti.LDAPServer},
+	}
+
+	if ldapEntry != nil {
+		attrMap["userDN"] = []string{authResult.LdapEntry.DN}
+	}
+
+	// TODO(sbower) strip out all ldap stuff
+	if ldapEntry != nil && ldapEntry.Attributes != nil {
+		for _, attr := range ldapEntry.Attributes {
+			attrMap[attr.Name] = attr.Values
+		}
+	}
+
 	return &token.AuthToken{
-		Username: ldapEntry.DN,
-		Assertions: map[string]string{
-			"ldapServer": lti.LDAPServer,
-			"userDN":     ldapEntry.DN,
-		},
+		Username: authResult.Username,
+		Groups: authResult.Groups,
+		Assertions: attrMap,
 	}
 }

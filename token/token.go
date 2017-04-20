@@ -22,7 +22,8 @@ var curveEll = elliptic.P256()
 // AuthToken contains information about the authenticated user
 type AuthToken struct {
 	Username   string
-	Assertions map[string]string
+	Groups []string
+	Assertions map[string][]string
 }
 
 // GenerateKeypair generates a public and private ECDSA key, to be
