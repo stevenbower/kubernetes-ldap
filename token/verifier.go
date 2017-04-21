@@ -22,8 +22,8 @@ type ecdsaVerifier struct {
 
 // NewVerifier reads a verification key file, and returns a verifier
 // to verify token objects.
-func NewVerifier(basename string) (Verifier, error) {
-	buf, err := ioutil.ReadFile(basename + ".pub")
+func NewVerifier(filename string) (Verifier, error) {
+	buf, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

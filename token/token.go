@@ -28,7 +28,7 @@ type AuthToken struct {
 
 // GenerateKeypair generates a public and private ECDSA key, to be
 // used for signing and verifying authentication tokens.
-func GenerateKeypair(filename string) (err error) {
+func GenerateKeypair(privKeyFilename, pubKeyFilename string) (err error) {
 	priv, err := ecdsa.GenerateKey(curveEll, rand.Reader)
 	if err != nil {
 		return
@@ -37,7 +37,7 @@ func GenerateKeypair(filename string) (err error) {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(filename+".priv", keyPEM, os.FileMode(0600))
+	err = ioutil.WriteFile(privKeyFilename, keyPEM, os.FileMode(0600))
 	if err != nil {
 		return
 	}
@@ -46,6 +46,6 @@ func GenerateKeypair(filename string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Error marshalling public key: %v", err)
 	}
-	err = ioutil.WriteFile(filename+".pub", pubKeyPEM, os.FileMode(0644))
+	err = ioutil.WriteFile(pubKeyFilename, pubKeyPEM, os.FileMode(0644))
 	return
 }

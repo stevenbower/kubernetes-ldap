@@ -37,6 +37,10 @@ var flTLSCertFile = flag.String("tls-cert-file", "",
 	"File containing x509 Certificate for HTTPS.  (CA cert, if any, concatenated after server cert).")
 var flTLSPrivateKeyFile = flag.String("tls-private-key-file", "", "File containing x509 private key matching --tls-cert-file.")
 
+var flGenSignKeys = flag.Bool("sign-gen-keys", false, "Generate keys and then exit")
+var flSignPublicKeyFile = flag.String("sign-public-key-file", "", "File containing x509 pubic key for Signing.")
+var flSignPrivateKeyFile = flag.String("sign-private-key-file", "", "File containing x509 private key matching --sign-public-key-file.")
+
 func init() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s\n", usage)
@@ -48,26 +52,49 @@ func main() {
 	flag.CommandLine.AddGoFlagSet(goflag.CommandLine) // support glog flags
 	flag.Parse()
 
+	glog.CopyStandardLogTo("INFO")
+
+    var pubKeyFile, privKeyFile string
+
+
+	if *flSignPublicKeyFile != "" && *flSignPrivateKeyFile != "" {
+		pubKeyFile = *flSignPublicKeyFile
+		privKeyFile  = *flSignPrivateKeyFile
+    
+	} else {
+	    keypairFilename := "signing"
+		pubKeyFile = keypairFilename + ".pub"
+		privKeyFile  = keypairFilename + ".priv"
+		
+    	if *flGenSignKeys == false {
+			if err := token.GenerateKeypair(privKeyFile, pubKeyFile); err != nil {
+				glog.Errorf("Error generating key pair: %v", err)
+			}
+		}
+	}
+
+    if *flGenSignKeys == true {
+		fmt.Printf("Generating signing keys (priv='%s' pub='%s')\n", privKeyFile, pubKeyFile)
+		if err := token.GenerateKeypair(privKeyFile, pubKeyFile); err != nil {
+			glog.Errorf("Error generating key pair: %v", err)
+		}
+		return 
+    }
+
 	// validate required flags
 	requireFlag("--ldap-host", flLdapHost)
 	requireFlag("--ldap-base-dn", flBaseDN)
 	requireFlag("--tls-cert-file", flTLSCertFile)
 	requireFlag("--tls-private-key", flTLSPrivateKeyFile)
 
-	glog.CopyStandardLogTo("INFO")
-
-	keypairFilename := "signing"
-	if err := token.GenerateKeypair(keypairFilename); err != nil {
-		glog.Errorf("Error generating key pair: %v", err)
-	}
 
 	var err error
-	tokenSigner, err := token.NewSigner(keypairFilename)
+	tokenSigner, err := token.NewSigner(privKeyFile)
 	if err != nil {
 		glog.Errorf("Error creating token issuer: %v", err)
 	}
 
-	tokenVerifier, err := token.NewVerifier(keypairFilename)
+	tokenVerifier, err := token.NewVerifier(pubKeyFile)
 	if err != nil {
 		glog.Errorf("Error creating token verifier: %v", err)
 	}
@@ -91,11 +118,11 @@ func main() {
 		LdapPort:           *flLdapPort,
 		AllowInsecure:      *flLdapAllowInsecure,
 		UserLoginAttribute: *flUserLoginAttribute,
-		GroupsAttribute: 		*flGroupsAttribute,
+		GroupsAttribute:		*flGroupsAttribute,
 		SearchUserDN:       *flSearchUserDN,
 		SearchUserPassword: *flSearchUserPassword,
 		TLSConfig:          ldapTLSConfig,
-		Attributes: 				attrs,
+		Attributes:					attrs,
 	}
 
 	server := &http.Server{Addr: fmt.Sprintf(":%d", *flServerPort)}
